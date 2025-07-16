@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 
 export default function Home() {
   const [newTodo, setNewTodo] = useState('');
-  const [todos, setTodos] = useState([]);
+  const [todos, setTodos] = useState<Todo[]>([]);
   const [dueDate, setDueDate] = useState('');
 
   useEffect(() => {
@@ -24,20 +24,24 @@ export default function Home() {
   const handleAddTodo = async () => {
     if (!newTodo.trim()) return;
     try {
-      await fetch('/api/todos', {
+      const response = await fetch('/api/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newTodo, dueDate: dueDate }),
       });
+      const newTodoItem = await response.json();
+      
+      // Add the new todo to the list immediately
+      setTodos(prev => [newTodoItem, ...prev]);
+      
       setNewTodo('');
       setDueDate('');
-      fetchTodos();
     } catch (error) {
       console.error('Failed to add todo:', error);
     }
   };
 
-  const handleDeleteTodo = async (id:any) => {
+  const handleDeleteTodo = async (id: any) => {
     try {
       await fetch(`/api/todos/${id}`, {
         method: 'DELETE',
@@ -51,6 +55,39 @@ export default function Home() {
   const isOverdue = (dateString: string | null) => {
     if (!dateString) return false;
     return new Date(dateString) < new Date();
+  };
+
+  // Component for handling image loading states
+  const TodoImage = ({ todo }: { todo: any }) => {
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
+
+    if (!todo.imageUrl) return null;
+
+    return (
+      <div className="relative">
+        {isLoading && (
+          <div className="w-16 h-16 bg-gray-200 rounded-lg flex items-center justify-center">
+            <svg className="w-6 h-6 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+        )}
+        {!hasError && (
+          <img
+            src={todo.imageUrl}
+            alt={`Visualization for: ${todo.title}`}
+            className={`w-16 h-16 object-cover rounded-lg shadow-sm ${isLoading ? 'hidden' : 'block'}`}
+            onLoad={() => setIsLoading(false)}
+            onError={() => {
+              setIsLoading(false);
+              setHasError(true);
+            }}
+          />
+        )}
+      </div>
+    );
   };
 
   return (
@@ -89,10 +126,10 @@ export default function Home() {
           {todos.map((todo: any) => (
             <li
               key={todo.id}
-              className="flex justify-between items-center bg-white bg-opacity-90 p-4 mb-4 rounded-lg shadow-lg"
+              className="flex justify-between items-start bg-white bg-opacity-90 p-4 mb-4 rounded-lg shadow-lg"
             >
-              <div className="flex flex-col">
-                <span className="text-gray-800">{todo.title}</span>
+              <div className="flex flex-col flex-grow mr-4">
+                <span className="text-gray-800 font-medium">{todo.title}</span>
                 {todo.dueDate && (
                   <span
                     className={`text-sm mt-1 ${isOverdue(todo.dueDate)
@@ -104,29 +141,33 @@ export default function Home() {
                   </span>
                 )}
               </div>
-              <button
-                onClick={() => handleDeleteTodo(todo.id)}
-                className="text-red-500 hover:text-red-700 transition duration-300"
-              >
-                {/* Delete Icon */}
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+              
+              <div className="flex items-center gap-3">
+                <TodoImage todo={todo} />
+                
+                <button
+                  onClick={() => handleDeleteTodo(todo.id)}
+                  className="text-red-500 hover:text-red-700 transition duration-300 flex-shrink-0"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
+                  <svg
+                    className="w-6 h-6"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
             </li>
           ))}
         </ul>
-      </div >
-    </div >
+      </div>
+    </div>
   );
 }

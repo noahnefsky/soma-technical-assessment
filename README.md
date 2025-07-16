@@ -40,6 +40,11 @@ To do this, make a request to the [Pexels API](https://www.pexels.com/api/) usin
 
 You will need to sign up for a free Pexels API key to make the fetch request. 
 
+--> Update Prisma schema
+--> Call the Pexels search endpoint to get the image url
+--> Store it in the db
+--> If the image is loading show a loading spinner (e.g. pexels endpoint call), otherwise show the image
+
 ### Part 3: Task Dependencies
 
 Implement a task dependency system that allows tasks to depend on other tasks. The system must:
