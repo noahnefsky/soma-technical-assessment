@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { searchPexelsImage } from '@/lib/pexels';
-import { parseDependencyIds, wouldCreateCircularDependency } from '@/lib/dependencies';
 
 export async function GET() {
   try {
@@ -33,29 +32,20 @@ export async function POST(request: Request) {
       if (existingTodos.length !== dependencyIds.length) {
         return NextResponse.json({ error: 'One or more dependencies do not exist' }, { status: 400 });
       }
-      
-      // Check for circular dependencies
-      const tempTodos = existingTodos.map(t => ({
-        ...t,
-        dependencyIds: t.dependencyIds
-      }));
-      
-      // Add a temporary todo to check for circular dependencies
-      const tempTodo = { id: -1, title: '', dependencyIds: JSON.stringify(dependencyIds) } as any;
-      const allTodos = [...tempTodos, tempTodo];
-      
-      if (wouldCreateCircularDependency(allTodos, -1, dependencyIds[0])) {
-        return NextResponse.json({ error: 'Circular dependency detected' }, { status: 400 });
-      }
     }
     
     // Search for a relevant image based on the todo title
     const imageUrl = await searchPexelsImage(title);
     
+    let processedDueDate = null;
+    if (dueDate) {
+      // Add time component to ensure it's treated as local time, not UTC
+      processedDueDate = new Date(dueDate + 'T00:00');  }
+    
     const todo = await prisma.todo.create({
       data: {
         title,
-        dueDate: dueDate ? new Date(dueDate) : null,
+        dueDate: processedDueDate,
         imageUrl,
         dependencyIds: dependencyIds ? JSON.stringify(dependencyIds) : null,
         duration: duration || 1,

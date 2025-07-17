@@ -16,56 +16,10 @@ export function parseDependencyIds(dependencyIds: string | null): number[] {
   }
 }
 
-// Check if adding a dependency would create a circular dependency
-export function wouldCreateCircularDependency(
-  todos: Todo[],
-  todoId: number,
-  dependencyId: number
-): boolean {
-  const visited = new Set<number>();
-  const recursionStack = new Set<number>();
-
-  function hasCycle(nodeId: number): boolean {
-    if (recursionStack.has(nodeId)) return true;
-    if (visited.has(nodeId)) return false;
-
-    visited.add(nodeId);
-    recursionStack.add(nodeId);
-
-    const todo = todos.find(t => t.id === nodeId);
-    if (todo) {
-      const dependencies = parseDependencyIds(todo.dependencyIds);
-      for (const depId of dependencies) {
-        if (hasCycle(depId)) return true;
-      }
-    }
-
-    recursionStack.delete(nodeId);
-    return false;
-  }
-
-  // Temporarily add the dependency and check for cycles
-  const tempTodo = todos.find(t => t.id === todoId);
-  if (!tempTodo) return false;
-
-  const currentDeps = parseDependencyIds(tempTodo.dependencyIds);
-  const newDeps = [...currentDeps, dependencyId];
-  
-  // Create a temporary todo with the new dependency
-  const tempTodos = todos.map(t => 
-    t.id === todoId 
-      ? { ...t, dependencyIds: JSON.stringify(newDeps) }
-      : t
-  );
-
-  return hasCycle(todoId);
-}
-
 // Get available dependencies for a todo (todos that won't cause circular dependencies)
 export function getAvailableDependencies(todos: Todo[], todoId: number): Todo[] {
   return todos.filter(todo => 
-    todo.id !== todoId && 
-    !wouldCreateCircularDependency(todos, todoId, todo.id)
+    todo.id !== todoId
   );
 }
 
