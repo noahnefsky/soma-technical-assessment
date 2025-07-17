@@ -10,6 +10,7 @@ import {
   Position,
   ReactFlowProvider,
   Controls,
+  MarkerType,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Todo } from '@prisma/client';
@@ -20,51 +21,91 @@ interface DependencyGraphProps {
   criticalPath: string[];
 }
 
-// Helper function to create a proper dependency flow
-const createDependencyFlow = (tasks: Todo[]): Map<string, { x: number; y: number }> => {
-  const positions = new Map<string, { x: number; y: number }>();
-  const nodeWidth = 250;
-  const nodeHeight = 120;
-  const startX = 50; // Add padding from the left edge
-  const startY = 50; // Add padding from the top edge
+// Layout constants
+const LAYOUT_CONFIG = {
+  levelSpacing: 350,
+  nodeSpacing: 30,
+  startX: 100,
+  startY: 100,
+  nodeWidth: 220,
+  nodeHeight: 80,
+} as const;
+
+const getDependencies = (tasks: Todo[], taskId: string): string[] => {
+  const task = tasks.find(t => t.id.toString() === taskId);
+  if (!task?.dependencyIds) return [];
+  return parseDependencyIds(task.dependencyIds).map(id => id.toString());
+};
+
+const calculateTaskLevels = (tasks: Todo[]): Map<string, number> => {
+  const levels = new Map<string, number>();
+  const visited = new Set<string>();
   
-  // Helper to get all dependencies for a task
-  const getDependencies = (taskId: string): string[] => {
-    const task = tasks.find(t => t.id.toString() === taskId);
-    if (!task?.dependencyIds) return [];
-    return parseDependencyIds(task.dependencyIds).map(id => id.toString());
-  };
-  
-  // Calculate the maximum depth for each task
-  const getDepth = (taskId: string, visiting = new Set<string>()): number => {
-    if (visiting.has(taskId)) return 0; // Avoid cycles
-    visiting.add(taskId);
+  const calculateLevel = (taskId: string): number => {
+    if (levels.has(taskId)) return levels.get(taskId)!;
+    if (visited.has(taskId)) return 0; // Avoid cycles
     
-    const dependencies = getDependencies(taskId);
+    visited.add(taskId);
+    const dependencies = getDependencies(tasks, taskId);
+    
     if (dependencies.length === 0) {
-      visiting.delete(taskId);
+      levels.set(taskId, 0);
+      visited.delete(taskId);
       return 0;
     }
     
-    const maxDepth = Math.max(...dependencies.map(depId => getDepth(depId, visiting)));
-    visiting.delete(taskId);
-    return maxDepth + 1;
+    const maxDepLevel = Math.max(...dependencies.map(depId => calculateLevel(depId)));
+    const level = maxDepLevel + 1;
+    levels.set(taskId, level);
+    visited.delete(taskId);
+    return level;
   };
   
-  // Group tasks by their depth
-  const tasksByDepth = new Map<number, Todo[]>();
-  tasks.forEach(task => {
-    const depth = getDepth(task.id.toString());
-    if (!tasksByDepth.has(depth)) tasksByDepth.set(depth, []);
-    tasksByDepth.get(depth)!.push(task);
+  tasks.forEach(task => calculateLevel(task.id.toString()));
+  return levels;
+};
+
+const groupTasksByLevel = (tasks: Todo[], levels: Map<string, number>): Map<number, string[]> => {
+  const tasksByLevel = new Map<number, string[]>();
+  
+  levels.forEach((level, taskId) => {
+    if (!tasksByLevel.has(level)) tasksByLevel.set(level, []);
+    tasksByLevel.get(level)!.push(taskId);
   });
   
-  // Position tasks by depth (left to right) starting from the left edge
-  tasksByDepth.forEach((depthTasks, depth) => {
-    depthTasks.forEach((task, index) => {
-      positions.set(task.id.toString(), {
-        x: startX + (depth * nodeWidth),
-        y: startY + (index * nodeHeight)
+  return tasksByLevel;
+};
+
+const sortTasksInLevel = (tasks: Todo[], tasksInLevel: string[]): string[] => {
+  return tasksInLevel.sort((a, b) => {
+    const aDeps = getDependencies(tasks, a).length;
+    const bDeps = getDependencies(tasks, b).length;
+    if (aDeps !== bDeps) return bDeps - aDeps;
+    
+    const aTask = tasks.find(t => t.id.toString() === a);
+    const bTask = tasks.find(t => t.id.toString() === b);
+    return (aTask?.title || '').localeCompare(bTask?.title || '');
+  });
+};
+
+const calculatePositions = (tasks: Todo[]): Map<string, { x: number; y: number }> => {
+  const positions = new Map<string, { x: number; y: number }>();
+  const levels = calculateTaskLevels(tasks);
+  const tasksByLevel = groupTasksByLevel(tasks, levels);
+  const sortedLevels = Array.from(tasksByLevel.keys()).sort((a, b) => a - b);
+  
+  // Position tasks level by level
+  sortedLevels.forEach((level, levelIndex) => {
+    const tasksInLevel = tasksByLevel.get(level)!;
+    const sortedTasks = sortTasksInLevel(tasks, tasksInLevel);
+    
+    const levelHeight = sortedTasks.length * (LAYOUT_CONFIG.nodeHeight + LAYOUT_CONFIG.nodeSpacing);
+    const startYForLevel = LAYOUT_CONFIG.startY - (levelHeight / 2);
+    
+    sortedTasks.forEach((taskId, index) => {
+      positions.set(taskId, {
+        x: LAYOUT_CONFIG.startX + (levelIndex * LAYOUT_CONFIG.levelSpacing),
+        y: startYForLevel + (index * (LAYOUT_CONFIG.nodeHeight + LAYOUT_CONFIG.nodeSpacing))
       });
     });
   });
@@ -72,7 +113,12 @@ const createDependencyFlow = (tasks: Todo[]): Map<string, { x: number; y: number
   return positions;
 };
 
-// Helper function to create node label
+
+const createDependencyFlow = (tasks: Todo[]): Map<string, { x: number; y: number }> => {
+  const positions = calculatePositions(tasks);
+  return positions;
+};
+
 const createNodeLabel = (task: Todo, isCritical: boolean) => (
   <div className="text-center p-2">
     <div className={`font-semibold text-sm ${isCritical ? 'text-red-600' : 'text-gray-800'}`}>
@@ -89,27 +135,26 @@ const createNodeLabel = (task: Todo, isCritical: boolean) => (
   </div>
 );
 
-// Helper function to get node style
 const getNodeStyle = (isCritical: boolean) => ({
   background: isCritical ? '#fee2e2' : '#f9fafb',
   border: isCritical ? '2px solid #dc2626' : '2px solid #e5e7eb',
   borderRadius: '8px',
-  width: 180,
+  width: LAYOUT_CONFIG.nodeWidth,
+  minHeight: LAYOUT_CONFIG.nodeHeight,
   fontSize: '12px',
+  padding: '8px',
 });
 
 export const DependencyGraph: React.FC<DependencyGraphProps> = ({ tasks, criticalPath }) => {
-  // Create nodes with dependency flow positioning
   const initialNodes: Node[] = useMemo(() => {
     const positions = createDependencyFlow(tasks);
-    const nodes: Node[] = [];
     
-    tasks.forEach((task) => {
+    return tasks.map((task) => {
       const taskId = task.id.toString();
       const position = positions.get(taskId)!;
       const isCritical = criticalPath.includes(taskId);
       
-      nodes.push({
+      return {
         id: taskId,
         type: 'default',
         position,
@@ -117,13 +162,10 @@ export const DependencyGraph: React.FC<DependencyGraphProps> = ({ tasks, critica
         style: getNodeStyle(isCritical),
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-      });
+      };
     });
-    
-    return nodes;
   }, [tasks, criticalPath]);
 
-  // Create edges from dependencies
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
     
@@ -134,7 +176,6 @@ export const DependencyGraph: React.FC<DependencyGraphProps> = ({ tasks, critica
       const taskId = task.id.toString();
       
       dependencies.forEach(depId => {
-        // Only create edge if both nodes exist
         const sourceExists = tasks.some(t => t.id.toString() === depId);
         if (!sourceExists) return;
         
@@ -151,7 +192,7 @@ export const DependencyGraph: React.FC<DependencyGraphProps> = ({ tasks, critica
             strokeWidth: isCriticalEdge ? 3 : 2,
           },
           markerEnd: {
-            type: 'arrow',
+            type: MarkerType.ArrowClosed,
             color: isCriticalEdge ? '#dc2626' : '#6b7280',
           },
         });
@@ -164,7 +205,6 @@ export const DependencyGraph: React.FC<DependencyGraphProps> = ({ tasks, critica
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  // Update nodes and edges when props change
   React.useEffect(() => {
     setNodes(initialNodes);
     setEdges(initialEdges);
@@ -180,17 +220,19 @@ export const DependencyGraph: React.FC<DependencyGraphProps> = ({ tasks, critica
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          nodesDraggable={false}
+          nodesDraggable={true}
+          nodesConnectable={false}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           fitView
-          fitViewOptions={{ padding: 0.1, maxZoom: 0.8, minZoom: 0.1 }}
+          fitViewOptions={{ padding: 0.2, maxZoom: 0.8, minZoom: 0.3 }}
           attributionPosition="top-right"
           style={{ backgroundColor: '#f8fafc' }}
-          defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
+          // defaultViewport={{ x: 0, y: 0, zoom: 0.6 }}
+          minZoom={0.1}
+          maxZoom={2}
         >
           <Controls />
-          <MiniMap nodeColor={nodeColor} />
           <Background gap={20} size={1} />
         </ReactFlow>
       </ReactFlowProvider>
