@@ -1,6 +1,8 @@
 ## Demo
 
-https://github.com/your-username/soma-technical-assessment-master/assets/your-user-id/Soma-technical-demo.mov
+<video width="100%" controls>
+  <source src="Soma-technical-demo.mov" type="video/quicktime">
+</video>
 
 ## Soma Capital Technical Assessment
 
