@@ -12,5 +12,7 @@ model Todo {
   title     String
   dueDate   DateTime?
   imageUrl  String?
+  dependencyIds String?
+  duration  Int      @default(1) // Duration in days
   createdAt DateTime  @default(now())
 }
